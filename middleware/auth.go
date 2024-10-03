@@ -4,11 +4,11 @@ import (
     "errors"
     "time"
     "github.com/dgrijalva/jwt-go"
+    "golang.org/x/crypto/bcrypt"
     "receipt-uploader-service/models"
     "receipt-uploader-service/storage"
 )
 
-// Secret key used for signing tokens
 var secretKey = []byte("your_secret_key")
 
 // Claims structure for JWT
@@ -37,7 +37,8 @@ func Authenticate(username, password string, userStorage storage.UserStorage) (s
         return "", errors.New("user not found")
     }
 
-    if user.Password != password {
+	err = bcrypt.CompareHashAndPassword([]byte(user.Password), []byte(password))
+    if err != nil {
         return "", errors.New("invalid password")
     }
 

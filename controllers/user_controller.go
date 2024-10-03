@@ -4,7 +4,7 @@ import (
     "net/http"
     "receipt-uploader-service/models"
     "receipt-uploader-service/services"
-    "receipt-uploader-service/auth" // Import the auth package
+    "receipt-uploader-service/auth" 
     "github.com/gin-gonic/gin"
 )
 

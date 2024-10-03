@@ -12,7 +12,7 @@ import (
     "path/filepath"
     "receipt-uploader-service/models"
     "receipt-uploader-service/storage"
-    "golang.org/x/image/draw" // Import for image resizing
+    "golang.org/x/image/draw" 
 )
 
 type ReceiptService struct {
@@ -64,7 +64,6 @@ func (s *ReceiptService) DownloadReceipt(userID, receiptID string, writer io.Wri
 }
 
 func validateImageFile(file multipart.File) error {
-    // Create a buffer to hold the file data
     buf := make([]byte, 512)
     _, err := file.Read(buf)
     if err != nil {
@@ -86,20 +85,18 @@ func validateImageFile(file multipart.File) error {
 }
 
 func serveFileWithResolution(filePath string, writer io.Writer, resolution string) error {
-    // Open the file
+    
     file, err := os.Open(filePath)
     if err != nil {
         return err
     }
     defer file.Close()
 
-    // Decode the image
     img, _, err := image.Decode(file)
     if err != nil {
         return err
     }
 
-    // Resize the image based on the requested resolution
     var newImg image.Image
     switch resolution {
     case "small":

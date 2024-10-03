@@ -2,6 +2,7 @@ package services
 
 import (
     "errors"
+	"golang.org/x/crypto/bcrypt"
     "receipt-uploader-service/models"
     "receipt-uploader-service/storage"
 )
@@ -22,9 +23,17 @@ func (s *UserService) SaveUser(user models.User) error {
     if existingUser != nil {
         return errors.New("username already exists")
     }
+
+    hashedPassword, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+    if err != nil {
+        return err 
+    }
+    
+    // Set the hashed password back to the user
+    user.Password = string(hashedPassword)
+
     return s.storage.SaveUser(user)
 }
-
 // GetUser retrieves a user by ID
 func (s *UserService) GetUser(userID string) (*models.User, error) {
     return s.storage.GetUserByID(userID)

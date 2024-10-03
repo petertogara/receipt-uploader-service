@@ -2,51 +2,42 @@ package main
 
 import (
     "log"
-
-    "github.com/gin-gonic/gin"
-    "github.com/swaggo/gin-swagger" 
-    "github.com/swaggo/gin-swagger/swaggerFiles"
-    _ "receipt-uploader-service/docs" 
+    "net/http"
+    
+    "github.com/gorilla/mux"
+    "github.com/gorilla/handlers"
+    "github.com/swaggo/http-swagger"
+    _ "receipt-uploader-service/docs"
     "receipt-uploader-service/middleware"
-    "receipt-uploader-service/api"
     "receipt-uploader-service/controllers"
-    "receipt-uploader-service/services"
     "receipt-uploader-service/storage"
+    "receipt-uploader-service/services"
 )
 
 func main() {
-    r := gin.Default()
+    r := mux.NewRouter()
 
+    cors := handlers.AllowedOrigins([]string{"*"})
 
-    r.Use(middleware.CORSMiddleware()) 
-
-    // API routes
-    userStorage := storage.NewUserStorage()
-    userService := services.NewUserService(userStorage)
-    userController := controllers.NewUserController(userService)
-    userHandler := api.NewUserAPI(userController)
-
-    receiptStorage := storage.NewReceiptStorage()
+    receiptStorage, err := storage.NewReceiptStorage()
+    if err != nil {
+        log.Fatalf("could not initialize storage: %v", err)
+    }
     receiptService := services.NewReceiptService(receiptStorage)
+
     receiptController := controllers.NewReceiptController(receiptService)
-    receiptHandler := api.NewReceiptAPI(receiptController)
 
     // Apply JWT middleware to protected routes
     r.Use(middleware.JWTMiddleware)
 
-    // User routes
-    r.POST("/api/users", userHandler.CreateUser)
-    r.POST("/api/users/login", userHandler.Login)
-    r.DELETE("/api/users/:user_id", userHandler.DeleteUser)
-    r.GET("/api/users/:user_id", userHandler.GetUser) 
+    // API routes
+    r.HandleFunc("/api/receipts", receiptController.SaveReceipt).Methods("POST")              
+    r.HandleFunc("/api/receipts/{userId}/{id}", receiptController.DownloadReceipt).Methods("GET") 
+    r.HandleFunc("/api/receipts/{userId}/{id}", receiptController.DeleteReceipt).Methods("DELETE")
 
-    // Receipt routes
-    r.POST("/api/receipts", receiptHandler.UploadReceipt)
-    r.GET("/api/receipts/:user_id/:receipt_id", receiptHandler.DownloadReceipt)
-    r.DELETE("/api/receipts/:user_id/:receipt_id", receiptHandler.DeleteReceipt)
-
-    r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+    // Swagger documentation route
+    r.PathPrefix("/swagger/").Handler(httpSwagger.WrapHandler)
 
     log.Println("Server started on :9090")
-    log.Fatal(r.Run(":9090")) 
+    log.Fatal(http.ListenAndServe(":9090", handlers.CORS(cors)(r)))
 }
