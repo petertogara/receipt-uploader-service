@@ -1,0 +1,18 @@
+# Go binaries
+/bin/
+/pkg/
+*.test
+*.out
+
+# Go modules
+/vendor/
+
+# Editor and OS specific files
+.DS_Store
+Thumbs.db
+*.swp
+*.tmp
+
+# IDE configurations
+.idea/
+.vscode/
