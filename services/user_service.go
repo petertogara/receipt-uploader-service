@@ -64,5 +64,5 @@ func generateJWT(userID string) (string, error) {
     claims["exp"] = time.Now().Add(time.Hour * 72).Unix() // Token expires in 72 hours
 
     token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-    return token.SignedString([]byte("Zimbabwe")) // Use a secure secret key
+    return token.SignedString([]byte("Zimbabwe"))
 }

@@ -1,0 +1,89 @@
+swagger: "2.0"
+info:
+  description: "API for uploading and managing receipt images."
+  version: "1.0"
+  title: "Receipt Uploader API"
+paths:
+  /api/users:
+    post:
+      summary: "Create a user"
+      description: "Creates a new user"
+      parameters:
+        - name: "user"
+          in: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/User"
+      responses:
+        201:
+          description: "User created successfully"
+          schema:
+            $ref: "#/definitions/Response"
+        400:
+          description: "Invalid input"
+  /api/login:
+    post:
+      summary: "User Login"
+      description: "Logs in a user and returns a JWT"
+      parameters:
+        - name: "user"
+          in: "body"
+          required: true
+          schema:
+            $ref: "#/definitions/User"
+      responses:
+        200:
+          description: "Login successful"
+          schema:
+            $ref: "#/definitions/Response"
+        401:
+          description: "Invalid credentials"
+  /api/receipts:
+    post:
+      summary: "Upload a receipt"
+      description: "Uploads a receipt image"
+      parameters:
+        - name: "receipt"
+          in: "formData"
+          required: true
+          type: "file"
+      responses:
+        200:
+          description: "Receipt uploaded successfully"
+          schema:
+            $ref: "#/definitions/Response"
+        400:
+          description: "Invalid file type"
+  /api/users/{userId}/receipts/{id}:
+    get:
+      summary: "Download a receipt"
+      description: "Downloads a receipt image by its ID"
+      parameters:
+        - name: "userId"
+          in: "path"
+          required: true
+          type: "string"
+        - name: "id"
+          in: "path"
+          required: true
+          type: "string"
+      responses:
+        200:
+          description: "Receipt downloaded successfully"
+        404:
+          description: "Receipt not found"
+definitions:
+  User:
+    type: "object"
+    properties:
+      id:
+        type: "string"
+      username:
+        type: "string"
+      password:
+        type: "string"
+  Response:
+    type: "object"
+    properties:
+      message:
+        type: "string"
