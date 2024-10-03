@@ -1,51 +1,39 @@
 package services
 
 import (
-    "encoding/json"
+    "bytes"
     "errors"
+    "image"
+    "image/jpeg"
+    "image/png"
     "io"
     "mime/multipart"
-    "net/http"
     "os"
     "path/filepath"
     "receipt-uploader-service/models"
     "receipt-uploader-service/storage"
+    "golang.org/x/image/draw" // Import for image resizing
 )
-
-
-var allowedImageFileTypes = map[string]bool{
-    ".jpg":  true,
-    ".jpeg": true,
-    ".png":  true,
-}
 
 type ReceiptService struct {
     storage storage.ReceiptStorage 
 }
 
-/
 func NewReceiptService(storage storage.ReceiptStorage) *ReceiptService {
     return &ReceiptService{storage: storage}
 }
 
-
-func (s *ReceiptService) SaveReceipt(receipt models.Receipt, file multipart.File, header *multipart.FileHeader) error {
-   
-    if !allowedImageFileTypes[filepath.Ext(header.Filename)] {
-        return errors.New("invalid file type; only images are allowed")
+func (s *ReceiptService) SaveReceipt(receipt models.Receipt, file multipart.File) error {
+    if err := validateImageFile(file); err != nil {
+        return err
     }
 
-    dir := filepath.Join("uploads")
+    dir := filepath.Join("uploads") 
     if err := os.MkdirAll(dir, os.ModePerm); err != nil {
         return err
     }
 
-    filePath := filepath.Join(dir, header.Filename)
-
-    if _, err := os.Stat(filePath); err == nil {
-        return errors.New("file already exists")
-    }
-
+    filePath := filepath.Join(dir, filepath.Base(receipt.Path))
     outFile, err := os.Create(filePath)
     if err != nil {
         return err
@@ -57,93 +45,91 @@ func (s *ReceiptService) SaveReceipt(receipt models.Receipt, file multipart.File
         return err
     }
 
-    // Set the receipt path and save the receipt
-    receipt.Path = filePath
-    if err := s.storage.SaveReceipt(receipt); err != nil {
-        return err
-    }
-
-    // Update receipts.json after saving
-    return s.UpdateReceiptsJSON()
+    receipt.Path = filePath 
+    return s.storage.SaveReceipt(receipt)
 }
 
-// UpdateReceiptsJSON updates the receipts.json file with the current receipts
-func (s *ReceiptService) UpdateReceiptsJSON() error {
-    receipts, err := s.storage.GetAllReceipts() // Implement this method in your storage layer
-    if err != nil {
-        return err
-    }
-
-    receiptsFilePath := filepath.Join("storage", "receipts.json")
-    file, err := os.Create(receiptsFilePath)
-    if err != nil {
-        return err
-    }
-    defer file.Close()
-
-    encoder := json.NewEncoder(file)
-    encoder.SetIndent("", "  ")
-    return encoder.Encode(receipts)
+func (s *ReceiptService) DeleteReceipt(userID, receiptID string) error {
+    return s.storage.DeleteReceipt(userID, receiptID)
 }
 
-// GetReceipt retrieves a receipt by user ID and receipt ID
-func (s *ReceiptService) GetReceipt(userID, receiptID string) (*models.Receipt, error) {
+func (s *ReceiptService) DownloadReceipt(userID, receiptID string, writer io.Writer, resolution string) error {
     receipt, err := s.storage.GetReceiptByID(userID, receiptID)
     if err != nil {
-        return nil, err
-    }
-
-    // Check if receipt file exists
-    if _, err := os.Stat(receipt.Path); os.IsNotExist(err) {
-        return nil, errors.New("receipt file does not exist")
-    }
-
-    return receipt, nil
-}
-
-// DownloadReceipt serves the receipt file for download
-func (s *ReceiptService) DownloadReceipt(userID, receiptID string, w http.ResponseWriter) error {
-    receipt, err := s.GetReceipt(userID, receiptID)
-    if err != nil {
         return err
     }
 
-    // Set the content type based on the file type
-    w.Header().Set("Content-Disposition", "attachment; filename="+filepath.Base(receipt.Path))
-    w.Header().Set("Content-Type", "application/octet-stream")
     
-    file, err := os.Open(receipt.Path)
+    return serveFileWithResolution(receipt.Path, writer, resolution)
+}
+
+func validateImageFile(file multipart.File) error {
+    // Create a buffer to hold the file data
+    buf := make([]byte, 512)
+    _, err := file.Read(buf)
+    if err != nil {
+        return errors.New("unable to read file")
+    }
+
+    // Reset the file cursor
+    _, err = file.Seek(0, 0)
+    if err != nil {
+        return errors.New("unable to reset file pointer")
+    }
+
+    // Check the MIME type
+    fileType := http.DetectContentType(buf)
+    if fileType != "image/jpeg" && fileType != "image/png" {
+        return errors.New("uploaded file is not a valid image type (JPEG or PNG)")
+    }
+    return nil
+}
+
+func serveFileWithResolution(filePath string, writer io.Writer, resolution string) error {
+    // Open the file
+    file, err := os.Open(filePath)
     if err != nil {
         return err
     }
     defer file.Close()
 
-    // Serve the file for download
-    _, err = io.Copy(w, file)
+    // Decode the image
+    img, _, err := image.Decode(file)
+    if err != nil {
+        return err
+    }
+
+    // Resize the image based on the requested resolution
+    var newImg image.Image
+    switch resolution {
+    case "small":
+        newImg = resizeImage(img, 100, 100) // Resize to 100x100 for small
+    case "medium":
+        newImg = resizeImage(img, 400, 400) // Resize to 400x400 for medium
+    case "large":
+        newImg = resizeImage(img, 800, 800) // Resize to 800x800 for large
+    default:
+        newImg = img // Serve original image if resolution is invalid
+    }
+
+    // Encode the new image to the writer
+    switch img.(type) {
+    case *image.NRGBA:
+        err = png.Encode(writer, newImg) // Encode as PNG
+    case *image.YCbCr:
+        err = jpeg.Encode(writer, newImg, nil) // Encode as JPEG
+    default:
+        err = jpeg.Encode(writer, newImg, nil) // Default to JPEG
+    }
+
     return err
 }
 
-// DeleteReceipt removes a receipt and its image file
-func (s *ReceiptService) DeleteReceipt(userID, receiptID string) error {
-    receipt, err := s.storage.GetReceiptByID(userID, receiptID)
-    if err != nil {
-        return err // Receipt not found
-    }
-
-    // Check if the physical file exists before deletion
-    if _, err := os.Stat(receipt.Path); os.IsNotExist(err) {
-        return errors.New("receipt file does not exist")
-    }
-
-  
-    if err := os.Remove(receipt.Path); err != nil {
-        return err // Error deleting the file
-    }
-
-    if err := s.storage.DeleteReceipt(userID, receiptID); err != nil {
-        return err
-    }
-
-    // Update receipts.json after deletion
-    return s.UpdateReceiptsJSON()
+// resizeImage resizes the given image to the specified width and height
+func resizeImage(img image.Image, width, height int) image.Image {
+    // Create a new blank image with the desired size
+    newImg := image.NewNRGBA(image.Rect(0, 0, width, height))
+    // Use the draw package to resize the original image into the new image
+    draw.BiLinear.Scale(newImg, newImg.Rect, img, img.Bounds(), draw.Over, nil)
+    return newImg
 }

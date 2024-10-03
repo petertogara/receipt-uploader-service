@@ -8,64 +8,56 @@ import (
 )
 
 type ReceiptController struct {
-    service *services.ReceiptService 
+    service *services.ReceiptService
 }
 
-
+// NewReceiptController creates a new instance of ReceiptController
 func NewReceiptController(service *services.ReceiptService) *ReceiptController {
     return &ReceiptController{service: service}
 }
 
-func (c *ReceiptController) UploadReceipt(ctx *gin.Context) {
+// SaveReceipt handles the uploading of a receipt
+func (c *ReceiptController) SaveReceipt(ctx *gin.Context) {
     var receipt models.Receipt
-    if err := ctx.ShouldBindJSON(&receipt); err != nil {
-        ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid input"})
-        return
-    }
-
     file, err := ctx.FormFile("file")
     if err != nil {
         ctx.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
         return
     }
 
-    f, err := file.Open()
-    if err != nil {
-        ctx.JSON(http.StatusInternalServerError, gin.H{"error": "could not open file"})
+    if err := ctx.ShouldBindJSON(&receipt); err != nil {
+        ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid input"})
         return
     }
-    defer f.Close()
 
-    err = c.service.SaveReceipt(receipt, f, file)
-    if err != nil {
+    // Call the service to save the receipt
+    if err := c.service.SaveReceipt(receipt, file); err != nil {
         ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
         return
     }
 
-    ctx.JSON(http.StatusOK, receipt)
+    ctx.JSON(http.StatusCreated, receipt)
 }
 
-
+// GetReceipt handles downloading a receipt
 func (c *ReceiptController) GetReceipt(ctx *gin.Context) {
-    userID := ctx.Param("user_id")
-    receiptID := ctx.Param("receipt_id")
+    userID := ctx.Param("user_id")            // Get user ID from the URL
+    receiptID := ctx.Param("receipt_id")      // Get receipt ID from the URL
+    resolution := ctx.Query("resolution")     // Get resolution from query parameters
 
-    receipt, err := c.service.GetReceipt(userID, receiptID)
-    if err != nil {
+    // Serve the file for download
+    if err := c.service.DownloadReceipt(userID, receiptID, ctx.Writer, resolution); err != nil {
         ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
         return
     }
-
-    ctx.JSON(http.StatusOK, receipt)
 }
 
-
+// DeleteReceipt handles deleting a receipt
 func (c *ReceiptController) DeleteReceipt(ctx *gin.Context) {
     userID := ctx.Param("user_id")
     receiptID := ctx.Param("receipt_id")
 
-    err := c.service.DeleteReceipt(userID, receiptID)
-    if err != nil {
+    if err := c.service.DeleteReceipt(userID, receiptID); err != nil {
         ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
         return
     }
