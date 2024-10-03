@@ -1,115 +1,54 @@
 package services
 
 import (
-    "errors"
+    "io"
     "mime/multipart"
-    "net/http"
     "os"
     "path/filepath"
-    "receipt_uploader_service/models"
-    "receipt_uploader_service/storage"
-    "github.com/gin-gonic/gin"
+    "errors"
+    "receipt-uploader-service/models"
+    "receipt-uploader-service/storage"
 )
 
-// UploadReceipt handles the receipt upload logic
-func UploadReceipt(c *gin.Context) (map[string]interface{}, error) {
-    file, err := c.FormFile("receipt")
+// ReceiptService provides methods for handling receipts
+type ReceiptService struct {
+    storage storage.ReceiptStorage 
+}
+
+// NewReceiptService creates a new instance of ReceiptService
+func NewReceiptService(storage storage.ReceiptStorage) *ReceiptService {
+    return &ReceiptService{storage: storage}
+}
+
+// SaveReceipt saves a receipt and its file
+func (s *ReceiptService) SaveReceipt(receipt models.Receipt, file multipart.File, header *multipart.FileHeader) error {
+    dir := filepath.Join("storage", "uploads")
+    if err := os.MkdirAll(dir, os.ModePerm); err != nil {
+        return err
+    }
+
+    filePath := filepath.Join(dir, header.Filename)
+    outFile, err := os.Create(filePath)
     if err != nil {
-        return nil, err
+        return err
     }
+    defer outFile.Close()
 
-    // Validate file format and size
-    if err := validateFile(file); err != nil {
-        return nil, err
-    }
-
-    userID := c.Param("userId")
-    receiptID, err := storage.StoreReceipt(file, userID)
+    _, err = io.Copy(outFile, file)
     if err != nil {
-        return nil, err
+        return err
     }
 
-    return map[string]interface{}{
-        "receipt_id": receiptID,
-        "message":    "Receipt uploaded successfully",
-    }, nil
+    receipt.Path = filePath
+    return s.storage.SaveReceipt(receipt)
 }
 
-// DownloadReceipt downloads a receipt image
-func DownloadReceipt(c *gin.Context) {
-    receiptID := c.Param("id")
-    userID := c.Param("userId")
-    resolution := c.Query("resolution")
-
-    receipt, err := storage.GetReceiptByID(receiptID)
-    if err != nil || receipt == nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Receipt not found"})
-        return
-    }
-
-    // Check ownership
-    if receipt.UserID != userID {
-        c.JSON(http.StatusForbidden, gin.H{"error": "You do not own this receipt"})
-        return
-    }
-
-    imgPath := filepath.Join("uploads", receipt.Path)
-    if resolution != "" {
-        imgPath = adjustPathForResolution(imgPath, resolution)
-    }
-
-    c.File(imgPath) // Send the file to the client
+// GetReceipt retrieves a receipt by ID
+func (s *ReceiptService) GetReceipt(userID, receiptID string) (*models.Receipt, error) {
+    return s.storage.GetReceiptByID(userID, receiptID)
 }
 
-// DeleteReceipt deletes a receipt
-func DeleteReceipt(c *gin.Context) {
-    receiptID := c.Param("id")
-    userID := c.Param("userId")
-
-    receipt, err := storage.GetReceiptByID(receiptID)
-    if err != nil || receipt == nil {
-        c.JSON(http.StatusNotFound, gin.H{"error": "Receipt not found"})
-        return
-    }
-
-    // Check ownership
-    if receipt.UserID != userID {
-        c.JSON(http.StatusForbidden, gin.H{"error": "You do not own this receipt"})
-        return
-    }
-
-    err = storage.DeleteReceipt(receiptID)
-    if err != nil {
-        c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to delete receipt"})
-        return
-    }
-
-    c.Status(http.StatusNoContent)
-}
-
-// validateFile checks if the uploaded file is valid
-func validateFile(file *multipart.FileHeader) error {
-    if file.Size > 5*1024*1024 { // Limit file size to 5MB
-        return errors.New("file size exceeds limit")
-    }
-
-    validExtensions := map[string]bool{
-        ".jpg":  true,
-        ".jpeg": true,
-        ".png":  true,
-    }
-
-    ext := filepath.Ext(file.Filename)
-    if !validExtensions[ext] {
-        return errors.New("invalid file type")
-    }
-
-    return nil
-}
-
-// adjustPathForResolution modifies the file path to point to the requested resolution
-func adjustPathForResolution(originalPath string, resolution string) string {
-    base := originalPath[:len(originalPath)-len(filepath.Ext(originalPath))]
-    ext := filepath.Ext(originalPath)
-    return base + "_" + resolution + ext
+// DeleteReceipt removes a receipt
+func (s *ReceiptService) DeleteReceipt(userID, receiptID string) error {
+    return s.storage.DeleteReceipt(userID, receiptID)
 }

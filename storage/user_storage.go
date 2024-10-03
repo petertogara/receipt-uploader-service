@@ -1,29 +1,81 @@
 package storage
 
 import (
-    "os"
-    "receipt_uploader_service/models"
     "encoding/json"
-    "github.com/google/uuid"
+    "errors"
+    "io/ioutil"
+    "os"
+    "receipt-uploader-service/models"
 )
 
-// StoreUser saves a new user and returns the user ID
-func StoreUser(user *models.User) (string, error) {
-    user.ID = uuid.New().String() // Generate a unique ID for the user
+const userFile = "users.json"
 
-    // Here, you should hash the user's password before storing
-    user.Password = hashPassword(user.Password) // Implement hashPassword
-
-    // Store user info in a JSON file
-    users := []models.User{user}
-    // Load existing users from file, if any
-
-    // Save updated user list back to file
-    return user.ID, nil
+type UserStorage interface {
+    SaveUser(user models.User) error
+    GetUserByID(userID string) (*models.User, error)
+    DeleteUser(userID string) error
 }
 
-// GetUserByUsername retrieves a user by their username
-func GetUserByUsername(username string) (*models.User, error) {
-    // Implement logic to read from JSON and return the user
-    return nil, nil
+// FileUserStorage implements UserStorage using local file storage
+type FileUserStorage struct {
+    users map[string]models.User
+}
+
+// NewUserStorage initializes the user storage
+func NewUserStorage() (UserStorage, error) {
+    storage := &FileUserStorage{
+        users: make(map[string]models.User),
+    }
+    err := storage.loadUsers()
+    return storage, err
+}
+
+// SaveUser saves a user to the storage
+func (s *FileUserStorage) SaveUser(user models.User) error {
+    s.users[user.ID] = user
+    return s.saveUsers()
+}
+
+// GetUserByID retrieves a user by ID
+func (s *FileUserStorage) GetUserByID(userID string) (*models.User, error) {
+    user, exists := s.users[userID]
+    if !exists {
+        return nil, errors.New("user not found")
+    }
+    return &user, nil
+}
+
+// DeleteUser removes a user from the storage
+func (s *FileUserStorage) DeleteUser(userID string) error {
+    delete(s.users, userID)
+    return s.saveUsers()
+}
+
+// loadUsers loads users from the JSON file
+func (s *FileUserStorage) loadUsers() error {
+    file, err := os.Open(userFile)
+    if err != nil {
+        if os.IsNotExist(err) {
+            return nil // File does not exist, return without error
+        }
+        return err
+    }
+    defer file.Close()
+
+    data, err := ioutil.ReadAll(file)
+    if err != nil {
+        return err
+    }
+
+    return json.Unmarshal(data, &s.users)
+}
+
+// saveUsers saves the users to the JSON file
+func (s *FileUserStorage) saveUsers() error {
+    data, err := json.Marshal(s.users)
+    if err != nil {
+        return err
+    }
+
+    return ioutil.WriteFile(userFile, data, 0644)
 }
